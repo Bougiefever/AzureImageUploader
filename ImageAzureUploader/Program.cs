@@ -17,13 +17,24 @@ namespace ImageAzureUploader
         private static Assembly _assembly;
         private static Stream _imageStream;
 
-
+        /// <summary>
+        /// Three ways to upload files to blob storage in Azure:
+        /// Upload a stream, a byte array if they are less than 64MB 
+        /// or for large files break into chunks to upload
+        /// 
+        /// Create an Azure Storage Account and put the connection
+        /// info in the app settings
+        /// 
+        /// This first deletes all the files in the storage container named 'testimages', 
+        /// so don't use an existing container
+        ///
+        /// </summary>
+        /// <param name="args"></param>
         static void Main(string[] args)
         {
 
             _assembly = Assembly.GetExecutingAssembly();
             string[] resources = _assembly.GetManifestResourceNames();
-           
 
             // connect to storage account
             CloudStorageAccount storageAccount = CloudStorageAccount.Parse(CloudConfigurationManager.GetSetting("StorageConnectionString"));
@@ -44,7 +55,7 @@ namespace ImageAzureUploader
             foreach (var resource in resources.Where(x => x.EndsWith("jpg")))
             {
                 // get image stream
-                var filename = resource.Substring(resource.IndexOf(".image") + 1);
+                var filename = resource.Substring(resource.IndexOf("images.") + 7);
                 _imageStream = _assembly.GetManifestResourceStream(resource);
 
                 // byte array containing image
@@ -63,7 +74,7 @@ namespace ImageAzureUploader
             foreach (var resource in resources.Where(x => x.EndsWith("jpg")))
             {
                 // get image stream
-                var filename = resource.Substring(resource.IndexOf(".image") + 1);
+                var filename = resource.Substring(resource.IndexOf("images.") + 7);
                 _imageStream = _assembly.GetManifestResourceStream(resource);
 
                 // byte array containing image
@@ -80,43 +91,44 @@ namespace ImageAzureUploader
             var largeFileName = resources.First(x => x.EndsWith("mp4"));
             byte[] fileBytes = Helper.GetStreamBytes(_assembly.GetManifestResourceStream(largeFileName));
 
-            int blockId = 0;
+            int id = 0;
             int byteslength = fileBytes.Length;
-            int bytesread = 0;
-            int index = 0;
-
-            int numBytesPerChunk = 250 * 1024; //250KB per block
+            int idx = 0;
+            string blockId;
+            int chunkSize = 250 * 1024; //250KB per block
 
             // upload each chunk of the file
             do
             {
-                byte[] buffer = new byte[numBytesPerChunk];
-                int limit = index + numBytesPerChunk;
-                for (int i = 0; index < limit; index++)
+                byte[] buffer = new byte[chunkSize];
+                int limit = idx + chunkSize;
+                for (int i = 0; idx < limit; idx++)
                 {
-                    buffer[i] = fileBytes[index];
+                    buffer[i] = fileBytes[idx];
                     i++;
                 }
-                bytesread = index;
-                string blockIdBase64 = Convert.ToBase64String(System.BitConverter.GetBytes(blockId));
 
-                bigBlob.PutBlock(blockIdBase64, new MemoryStream(buffer, true), null); // upload chunk
-                blocklist.Add(blockIdBase64);
-                blockId++;
-            } while (byteslength - bytesread > numBytesPerChunk);
+                blockId = Convert.ToBase64String(BitConverter.GetBytes(id));
+                bigBlob.PutBlock(blockId, new MemoryStream(buffer, true), null); // upload chunk
+                blocklist.Add(blockId);
+                Console.WriteLine("Upload block " + id);
+                id++;
+            } while (byteslength - idx > chunkSize);
 
-            int final = byteslength - bytesread;
+            int final = byteslength - idx;
             byte[] finalbuffer = new byte[final];
-            for (int loops = 0; index < byteslength; index++)
+            for (int loops = 0; idx < byteslength; idx++)
             {
-                finalbuffer[loops] = fileBytes[index];
+                finalbuffer[loops] = fileBytes[idx];
                 loops++;
             }
-            string blobBlockId = Convert.ToBase64String(System.BitConverter.GetBytes(blockId));
-            bigBlob.PutBlock(blobBlockId, new MemoryStream(finalbuffer, true), null);
-            blocklist.Add(blobBlockId);
+            blockId = Convert.ToBase64String(BitConverter.GetBytes(id));
+            bigBlob.PutBlock(blockId, new MemoryStream(finalbuffer, true), null);
+            blocklist.Add(blockId);
+            Console.WriteLine("Upload block " + id);
 
             // finalize the uploaded file
+            Console.WriteLine("finalize");
             bigBlob.PutBlockList(blocklist);
         }
     }
