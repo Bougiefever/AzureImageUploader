@@ -101,7 +101,8 @@ namespace ImageAzureUploader
             do
             {
                 byte[] buffer = new byte[chunkSize];
-                int limit = idx + chunkSize;
+				// set limit to chunksize of byteslength is larger, else use byteslength
+                int limit = byteslength > chunkSize ? idx + chunkSize : idx + byteslength;
                 for (int i = 0; idx < limit; idx++)
                 {
                     buffer[i] = fileBytes[idx];
